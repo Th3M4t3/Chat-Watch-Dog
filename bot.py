@@ -51,7 +51,7 @@ def run_discord_bot():
 			print(is_grooming)
 			
 			# Save the data to CSV
-			write_to_csv('../dataset/discord_data.csv', username, user_message, str(message.channel), date, is_grooming)
+			write_to_csv('./discord_data.csv', username, user_message, str(message.channel), date, is_grooming)
 		
 		except discord.Forbidden as e:
 			print(f"Permission error: {e}")
