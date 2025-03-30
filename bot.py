@@ -1,25 +1,34 @@
 import discord
-import responses
-from huggingface import bert_model
+from responses import handle_response
+from huggingface import NLPModel
 import csv
 from datetime import datetime
 import json
+from translator import LibreTranslateClient
 
 
 
-def write_to_csv(filename, username, message, channel, date, is_grooming):
+def write_to_csv(filename, username, message, channel, date, model_output, is_grooming):
 	with open(filename, 'a', newline='') as csvfile:
-		fieldnames = ['Username', 'Message', 'Channel', 'Date', 'Is_grooming']
+		fieldnames = ['Username', 'Message', 'Channel', 'Date', 'Model_output', 'Is_grooming']
 		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-		writer.writerow({'Username': username, 'Message': message, 'Channel': channel, 'Date': date, 'Is_grooming': is_grooming})
+		writer.writerow({'Username': username, 'Message': message, 'Channel': channel, 'Date': date,'Model_output': model_output, 'Is_grooming': is_grooming})
 
 def run_discord_bot():
 	with open('config.json') as f:
 		config = json.load(f)
 
-	TOKEN = config['API_KEY']
+	discord_config = config['discord']
+	libre_config = config['libretranslate']
+	host = libre_config['host']
+	port = libre_config['port']
+	token = discord_config['API_KEY']
+	lookback = discord_config['Lookback']
+
+	treshold = config['grooming_treshold']
 	client = discord.Client(intents = discord.Intents.all())
-	model = bert_model()
+	model = NLPModel()
+	translator = LibreTranslateClient(host, port)
 
 	@client.event
 	async def on_ready():
@@ -28,30 +37,33 @@ def run_discord_bot():
 	@client.event
 	async def on_message(message):
 		if message.author == client.user:
-			return  # Prevent bot from responding to itself
-	
-		# Lookback limit
-		lookback = 4
-		
-		# Extract relevant message info
+			return
+
 		username = str(message.author)
 		user_message = message.content
 		date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 		
 		try:
-			# Fetch the last 'lookback' number of messages and extract only their content
 			messages = []
 			async for msg in message.channel.history(limit=lookback):
 				messages.append(msg.content)
 			messages.reverse()
+			translated_messages = []
 			for msg in messages:
+				translated_messages.append(translator.translate(msg, "auto", "en"))
+			for msg in translated_messages:
 				print(msg)
-			# Run inference model with the message contents (texts)
-			is_grooming = model.run_inference_model(messages)
-			print(is_grooming)
-			
-			# Save the data to CSV
-			write_to_csv('./discord_data.csv', username, user_message, str(message.channel), date, is_grooming)
+			model_output = model.run_inference_model(translated_messages)
+			is_grooming = []
+			for out in model_output:
+				if out > treshold:
+					is_grooming.append(True)
+					response = handle_response(out)
+					await message.channel.send(response)
+				else:
+					is_grooming.append(False)
+			print(model_output)
+			write_to_csv('./discord_data.csv', username, user_message, str(message.channel), date, model_output, is_grooming)
 		
 		except discord.Forbidden as e:
 			print(f"Permission error: {e}")
@@ -59,5 +71,8 @@ def run_discord_bot():
 		except Exception as e:
 			print(f"An error occurred: {e}")
 			return
+		except ConnectionError as e:
+			print(f"An error occured when connecting: {e}")
+			return
 
-	client.run(TOKEN)
+	client.run(token)

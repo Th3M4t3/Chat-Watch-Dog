@@ -7,7 +7,7 @@ from tensorflow.keras import layers
 from transformers import BertTokenizer
 from transformers import TFBertModel
 
-class bert_model:
+class NLPModel:
 	def create_bert_classification_model(self,
 										 bert_model,
 										 num_train_layers=0,
